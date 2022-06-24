@@ -1,2 +1,4 @@
 config:
   gcp:project: fog-computing-352617
+  gcp:region: europe-west1
+  gcp:zone: europe-west1-b
