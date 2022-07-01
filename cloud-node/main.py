@@ -9,6 +9,7 @@ def main():
     socket = context.socket(zmq.ROUTER)  # ROUTER
     socket.bind("tcp://*:5555")
 
+    i = 0
     while True:
         msg = socket.recv_multipart()
         print(msg)
@@ -16,9 +17,11 @@ def main():
             break
 
         data = json.loads(msg[2])
+        print(data)
 
-        response = msg[:2] + [b'warm' if data['temperature'] >= 20 else b'cold',
-                              b'humid' if data['humidity'] >= .5 else b'arid']
+        prediction = f'Sunny{i}'
+        i += 1
+        response = msg[:2] + [prediction.encode()]
 
         socket.send_multipart(response)
 

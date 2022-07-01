@@ -1,38 +1,38 @@
-from random import randint
+import collections
+import sys
 import time
 import zmq
-from sensor import TemperatureSensor, HumiditySensor
+from weather_sensors import WeatherSensors
 
 context = zmq.Context(1)
-worker = context.socket(zmq.REQ)
+socket = context.socket(zmq.REQ)
 
-identity = "%04X-%04X" % (randint(0, 0x10000), randint(0, 0x10000))
-worker.setsockopt_string(zmq.IDENTITY, identity)
-worker.connect("tcp://localhost:5555")
+identity = sys.argv[1]
+socket.setsockopt_string(zmq.IDENTITY, identity)
+socket.connect("tcp://localhost:5555")
 
-temperature_sensor = TemperatureSensor()
-humidity_sensor = HumiditySensor()
+weather_sensors = WeatherSensors()
+prediction_history = collections.deque(maxlen=5)
 
 
 # TODO handshake
 
 def main():
     while True:
-        temperature, humidity = temperature_sensor.sample(), humidity_sensor.sample()
-        worker.send_json({
-            'temperature': temperature,
-            'humidity': humidity
-        })
+        sensor_data = weather_sensors.next()
+        print(f'Read sensor data: {sensor_data}')
+        socket.send_json(sensor_data._asdict())
 
-        msg = worker.recv_multipart()
+        msg = socket.recv_multipart()
         if not msg:
             break
+        prediction = msg[0].decode()
 
-        print(msg)
+        prediction_history.appendleft(prediction)
+        print(f'Weather prediction: {prediction}, last predictions: {", ".join(prediction_history)}')
 
+        time.sleep(1)
 
-y
-time.sleep(10)  # Do some heavy work
 
 if __name__ == '__main__':
     main()
