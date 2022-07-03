@@ -1,57 +1,54 @@
-import collections
-import json
+import asyncio
+import logging
 import sys
-import time
+
 import zmq
 
-from util.message_encoding import encode_message, decode_message
+from prediction_controller import PredictionController
+from prediction_history import PredictionHistory
+from util.log import get_logger
+from util.message_socket import MessageSocket
 from weather_sensors import WeatherSensors
 
-context = zmq.Context(1)
-socket = context.socket(zmq.REQ)
+logger = get_logger(__name__)
 
-identity = sys.argv[1]
-socket.setsockopt_string(zmq.IDENTITY, identity)
-socket.connect("tcp://localhost:5555")
-
+message_socket = MessageSocket(socket_type=zmq.REQ, identity=sys.argv[1])
 weather_sensors = WeatherSensors()
-prediction_history = collections.deque(maxlen=5)
-sensor_history = collections.deque(maxlen=5)
+prediction_history = PredictionHistory()
+prediction_controller = PredictionController(
+    weather_sensors=weather_sensors,
+    prediction_history=prediction_history,
+    message_socket=message_socket
+)
 
-def do_handshake():
-    socket.send_string('hello')
-    response = decode_message(socket.recv_multipart())
-    if response[0] != 'hello':
+
+async def do_handshake():
+    await message_socket.send_parts(type='hello')
+    response = await message_socket.receive()
+    if response.type != 'hello':
         raise Exception(f'Invalid handshake response, received {response}')
 
-    cached_history = response[1:]
+    cached_history = response.parts
     if len(cached_history) == 0:
-        print('No history to restore.')
+        logger.warning('No history to restore.')
         return
 
-    for prediction in cached_history:
-        prediction_history.append(prediction)
-    print(f'Last weather predictions: {", ".join(cached_history)}')
+    prediction_history.restore(history=cached_history)
+    logger.info(f'Last weather predictions: {", ".join(cached_history)}')
 
-def main():
-    do_handshake()
 
-    while True:
-        sensor_data = weather_sensors.next()
-        print(f'Read sensor data: {sensor_data}')
-        socket.send_multipart(encode_message(['predict', json.dumps(sensor_data._asdict())]))
-
-        msg = socket.recv_multipart()
-        if not msg:
-            break
-        msg = decode_message(msg)
-        prediction = msg[1]
-
-        prediction_history.appendleft(prediction)
-        print(f'Weather prediction: {prediction}, last predictions: {", ".join(prediction_history)}')
-
-        time.sleep(1)
+async def main():
+    message_socket.connect('localhost', 5555)
+    await do_handshake()
+    await asyncio.gather(
+        weather_sensors.start(),
+        prediction_controller.start()
+    )
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info('Shutting down...')
+        message_socket.shutdown()

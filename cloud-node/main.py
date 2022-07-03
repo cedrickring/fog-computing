@@ -1,61 +1,31 @@
-import json
-import warnings
-from collections import defaultdict, deque
-from functools import partial
-from typing import Deque
+import asyncio
+import logging
 
-import pickle
 import zmq
 
-from util.message_encoding import encode_message
+from message_handler import MessageHandler
+from prediction_histories import PredictionHistories
+from util.log import get_logger
+from util.message_socket import MessageSocket
 
-filepath = "../models/random_forest.sav"
-classifier, scaler, label_encoder = pickle.load(open(filepath, 'rb'))
+logger = get_logger(__name__)
 
-prediction_histories: dict[str, Deque[str]] = defaultdict(partial(deque, maxlen=5))
-
-
-def main():
-    context = zmq.Context(1)
-
-    socket = context.socket(zmq.ROUTER)  # ROUTER
-    socket.bind("tcp://*:5555")
-
-    print('listening')
-
-    while True:
-        msg = socket.recv_multipart()
-        if not msg:
-            break
-
-        msg = [part.decode() for part in msg]
-        sender, msg_type, parts = msg[0], msg[2], msg[3:]
-        response: list[str] = []
-        if msg_type == "hello":
-            response = handle_handshake(sender, parts)
-        elif msg_type == 'predict':
-            response = handle_predict(sender, parts)
-
-        multipart_res = encode_message([sender, '', msg_type] + response)
-        socket.send_multipart(multipart_res)
+model_path = "../models/random_forest.sav"
+socket = MessageSocket(socket_type=zmq.ROUTER)
+prediction_histories = PredictionHistories()
+message_handler = MessageHandler(model_path=model_path, message_socket=socket, prediction_histories=prediction_histories)
 
 
-def handle_handshake(sender: str, message: list[str]) -> list[str]:
-    history = prediction_histories[sender]
-    return list(history)
-
-
-def handle_predict(sender: str, message: list[str]) -> list[str]:
-    sensor_data = json.loads(message[0])
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # silence sklearn warnings
-
-        norm_data = scaler.transform([list(sensor_data.values())])
-        prediction = label_encoder.inverse_transform(classifier.predict(norm_data))[0]
-        print(f'({sender}) Predicted "{prediction}" for {sensor_data}')
-        prediction_histories[sender].appendleft(prediction)
-        return [prediction]
+async def main():
+    port = 5555
+    socket.bind(port=5555)
+    logger.info(f'Listening on port: {port}')
+    await message_handler.listen()
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info('Shutting down...')
+        socket.shutdown()
