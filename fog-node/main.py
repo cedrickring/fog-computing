@@ -1,18 +1,19 @@
 import asyncio
-import logging
 import sys
 
 import zmq
 
+from heartbeat_controller import HeartbeatController
 from prediction_controller import PredictionController
 from prediction_history import PredictionHistory
 from util.log import get_logger
 from util.message_socket import MessageSocket
+from util.race import race, timeout
 from weather_sensors import WeatherSensors
 
 logger = get_logger(__name__)
 
-message_socket = MessageSocket(socket_type=zmq.REQ, identity=sys.argv[1])
+message_socket = MessageSocket(host="localhost", port=40000, socket_type=zmq.REQ, identity=sys.argv[1])
 weather_sensors = WeatherSensors()
 prediction_history = PredictionHistory()
 prediction_controller = PredictionController(
@@ -20,11 +21,16 @@ prediction_controller = PredictionController(
     prediction_history=prediction_history,
     message_socket=message_socket
 )
+heartbeat_controller = HeartbeatController(
+    message_socket=message_socket
+)
 
 
 async def do_handshake():
-    await message_socket.send_parts(type='hello')
-    response = await message_socket.receive()
+    response = await race([timeout(500), message_socket.send_parts_and_receive(type='hello')])
+    if isinstance(response, TimeoutError):
+        raise Exception('Failed to establish connection')
+
     if response.type != 'hello':
         raise Exception(f'Invalid handshake response, received {response}')
 
@@ -38,11 +44,12 @@ async def do_handshake():
 
 
 async def main():
-    message_socket.connect('localhost', 5555)
+    message_socket.connect()
     await do_handshake()
     await asyncio.gather(
+        heartbeat_controller.start(),
         weather_sensors.start(),
-        prediction_controller.start()
+        prediction_controller.start(),
     )
 
 

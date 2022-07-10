@@ -1,8 +1,11 @@
 import json
+from asyncio import Lock
 from dataclasses import dataclass
-from typing import Optional, Any
+from typing import Optional, Any, Callable, Awaitable
 
 import zmq.asyncio
+
+ReconnectCallback = Callable[[], Awaitable]
 
 @dataclass
 class ResponseMessage:
@@ -26,20 +29,32 @@ class ReceivedMessage:
 
 class MessageSocket:
 
-    def __init__(self, socket_type: int, identity: str = None):
+    def __init__(self, host: str, port: int, socket_type: int, identity: str = None):
+        self._host = host
+        self._port = port
         self._context = zmq.asyncio.Context(io_threads=1)
         self._socket = self._context.socket(socket_type)
+
+        self._lock: Optional[Lock] = None
+        self._reconnect_callbacks: list[ReconnectCallback] = []
         if identity:
             self._socket.setsockopt_string(zmq.IDENTITY, identity)
 
-    def bind(self, port: int, host='*') -> None:
-        self._socket.bind(f'tcp://{host}:{port}')
+    def bind(self) -> None:
+        self._socket.bind(f'tcp://{self._host}:{self._port}')
 
-    def connect(self, host: str, port: int) -> None:
-        self._socket.connect(f'tcp://{host}:{port}')
+    def connect(self) -> None:
+        self._socket.connect(f'tcp://{self._host}:{self._port}')
 
     def shutdown(self):
         self._socket.close()
+
+    def add_reconnect_callback(self, callback: ReconnectCallback) -> None:
+        self._reconnect_callbacks.append(callback)
+
+    async def notify_reconnect_callbacks(self) -> None:
+        for callback in reversed(self._reconnect_callbacks):
+            await callback()
 
     async def receive(self) -> Optional[ReceivedMessage]:
         message = await self._socket.recv_multipart()
@@ -61,13 +76,21 @@ class MessageSocket:
 
         await self._socket.send_multipart([part.encode() for part in message])
 
-    async def send_parts(self, type: str, parts: list[str] = None, sender: str = None) -> None:
+    async def send_parts_and_receive(self, type: str, parts: list[str] = None, sender: str = None) -> Optional[ResponseMessage]:
         if parts is None:
             parts = []
-        await self.send_response(ResponseMessage(sender=sender, type=type, parts=parts))
+        async with self._get_lock():
+            await self.send_response(ResponseMessage(sender=sender, type=type, parts=parts))
+            return await self.receive()
 
-    async def send_string(self, type: str, string: str, sender: str = None) -> None:
-        await self.send_parts(type=type, sender=sender, parts=[string])
+    async def send_string_and_receive(self, type: str, string: str, sender: str = None) -> Optional[ResponseMessage]:
+        return await self.send_parts_and_receive(type=type, sender=sender, parts=[string])
 
-    async def send_json(self, type: str, data: Any, sender: str = None) -> None:
-        await self.send_parts(sender=sender, type=type, parts=[json.dumps(data)])
+    async def send_json_and_receive(self, type: str, data: Any, sender: str = None) -> Optional[ResponseMessage]:
+        return await self.send_parts_and_receive(sender=sender, type=type, parts=[json.dumps(data)])
+
+    def _get_lock(self) -> Lock:
+        # lazily initialize lock, so we are in the correct event loop
+        if not self._lock:
+            self._lock = Lock()
+        return self._lock

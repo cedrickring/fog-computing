@@ -5,7 +5,7 @@ import warnings
 
 from prediction_histories import PredictionHistories
 from util.log import get_logger
-from util.message_socket import MessageSocket, ReceivedMessage
+from util.message_socket import MessageSocket, ReceivedMessage, ResponseMessage
 
 logger = get_logger(__name__)
 
@@ -36,6 +36,8 @@ class MessageHandler:
                     await self._handle_predict(message)
                 elif message.type == 'hello':
                     await self._handle_handshake(message)
+                elif message.type == 'ping':
+                    await self._message_socket.send_response(ResponseMessage(sender=message.sender, type='pong', parts=[]))
 
             except asyncio.CancelledError:
                 logger.info('Stopped listening for messages.')
@@ -52,12 +54,17 @@ class MessageHandler:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")  # silence sklearn warnings
 
-            norm_data = scaler.transform([list(sensor_data.values())])
-            prediction = label_encoder.inverse_transform(classifier.predict(norm_data))[0]
-            print(f'({message.sender}) Predicted "{prediction}" for {sensor_data}')
+            if isinstance(sensor_data, list):
+                X = [list(data.values()) for data in sensor_data]
+            else:
+                X = [list(sensor_data.values())]
 
-            self._prediction_histories.add(message.sender, prediction)
-            await self._message_socket.send_response(message.create_response(prediction))
+            norm_data = scaler.transform(X)
+            predictions = label_encoder.inverse_transform(classifier.predict(norm_data))
+            print(f'({message.sender}) Predicted "{", ".join(predictions)}" for {sensor_data}')
+
+            self._prediction_histories.add_all(message.sender, predictions)
+            await self._message_socket.send_response(message.create_response(*predictions))
 
     async def _handle_handshake(self, message: ReceivedMessage):
         history = self._prediction_histories.get(message.sender)

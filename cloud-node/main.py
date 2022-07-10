@@ -10,15 +10,15 @@ from util.message_socket import MessageSocket
 
 logger = get_logger(__name__)
 
+port = 40000
 model_path = "../models/random_forest.sav"
-socket = MessageSocket(socket_type=zmq.ROUTER)
+socket = MessageSocket(host='*', port=port, socket_type=zmq.ROUTER)
 prediction_histories = PredictionHistories()
 message_handler = MessageHandler(model_path=model_path, message_socket=socket, prediction_histories=prediction_histories)
 
 
 async def main():
-    port = 5555
-    socket.bind(port=5555)
+    socket.bind()
     logger.info(f'Listening on port: {port}')
     await message_handler.listen()
 
