@@ -1,3 +1,4 @@
+encryptionsalt: v1:z7na+LzJfqc=:v1:iFKU6RZQxJeqrqDV:3xRXw8fYG/a2vAU7QgKstrfESn214Q==
 config:
   gcp:project: fog-computing-352617
   gcp:region: europe-west1

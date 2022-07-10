@@ -11,10 +11,17 @@ const computeFirewall = new gcp.compute.Firewall('firewall', {
     }],
 });
 
+const startupScript = `
+#!/bin/bash
+cd /home/runner/cloud-node
+nohup python3 main.py >/home/runner/logs.txt 2>&1 &
+`;
+
 // Create a Virtual Machine Instance
 const computeInstance = new gcp.compute.Instance('instance', {
     machineType: 'e2-medium',
     bootDisk: {initializeParams: {image: 'debian-cloud/debian-11'}},
+    metadataStartupScript: startupScript,
     networkInterfaces: [{
         network: network.id,
         // accessConfigus must include a single empty config to request an ephemeral IP
@@ -23,4 +30,6 @@ const computeInstance = new gcp.compute.Instance('instance', {
 });
 
 export const instanceName = computeInstance.name;
+export const instanceZone = computeInstance.zone;
+export const instanceProject = computeInstance.project;
 export const instanceIP = computeInstance.networkInterfaces.apply(ni => ni[0]?.accessConfigs?.[0].natIp);

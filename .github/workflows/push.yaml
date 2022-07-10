@@ -1,0 +1,55 @@
+name: Pulumi
+on: [push]
+env:
+  PROJECT_ID: fog-computing-352617
+jobs:
+  up:
+    name: Update
+    runs-on: ubuntu-latest
+    outputs:
+      instanceName: ${{ steps.pulumi.outputs.instanceName }}
+      instanceZone: ${{ steps.pulumi.outputs.instanceZone }}
+      instanceProject: ${{ steps.pulumi.outputs.instanceProject }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16.x
+      - uses: google-github-actions/setup-gcloud@v0
+        with:
+          service_account_key: ${{ secrets.GCP_KEY }}
+          project_id: ${{ env.PROJECT_ID }}
+          export_default_credentials: true
+      - run: npm install
+        working-directory: deployment
+      - uses: pulumi/actions@v3
+        id: pulumi
+        with:
+          command: up
+          stack-name: prod
+          cloud-url: gs://fog-computing-pulumi
+          work-dir: deployment
+        env:
+          PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+  deploy:
+    name: Deploy code
+    runs-on: ubuntu-latest
+    needs: up
+    env:
+      CLOUDSDK_COMPUTE_ZONE: "${{ needs.up.outputs.instanceZone }}"
+      CLOUDSDK_CORE_PROJECT: "${{ needs.up.outputs.instanceProject }}"
+    steps:
+      - uses: actions/checkout@v3
+      - uses: google-github-actions/setup-gcloud@v0
+        with:
+          service_account_key: ${{ secrets.GCP_KEY }}
+          project_id: ${{ env.PROJECT_ID }}
+
+          export_default_credentials: true
+      - run: "gcloud compute scp --recurse cloud-node models util requirements.txt ${{needs.up.outputs.instanceName }}:~"
+      - run: 'gcloud compute ssh ${{needs.up.outputs.instanceName }} --command="sudo apt update && sudo apt install screen python3-pip -y && pip install -r requirements.txt && sudo reboot"'
+        name: Install required packages and reboot
+
+
+
