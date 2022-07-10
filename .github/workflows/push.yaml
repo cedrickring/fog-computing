@@ -41,6 +41,8 @@ jobs:
       CLOUDSDK_CORE_PROJECT: "${{ needs.up.outputs.instanceProject }}"
     steps:
       - uses: actions/checkout@v3
+        with:
+          lfs: true
       - uses: google-github-actions/setup-gcloud@v0
         with:
           service_account_key: ${{ secrets.GCP_KEY }}
@@ -48,7 +50,7 @@ jobs:
 
           export_default_credentials: true
       - run: "gcloud compute scp --recurse cloud-node models util requirements.txt ${{needs.up.outputs.instanceName }}:~"
-      - run: 'gcloud compute ssh ${{needs.up.outputs.instanceName }} --command="sudo apt update && sudo apt install screen python3-pip -y && pip install -r requirements.txt && sudo reboot"'
+      - run: 'gcloud compute ssh ${{needs.up.outputs.instanceName }} --command="sudo apt update && sudo apt install screen python3-pip -y && sudo reboot"'
         name: Install required packages and reboot
 
 

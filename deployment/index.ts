@@ -7,14 +7,16 @@ const computeFirewall = new gcp.compute.Firewall('firewall', {
     sourceRanges: ['0.0.0.0/0'],
     allows: [{
         protocol: 'tcp',
-        ports: ['22', '5000'],
+        ports: ['22', '40000'],
     }],
 });
 
 const startupScript = `
 #!/bin/bash
 cd /home/runner/cloud-node
-nohup python3 main.py >/home/runner/logs.txt 2>&1 &
+pip install -r ../requirements.txt >/home/runner/install-log.txt 2>&1
+export PYTHONPATH=/home/runner:$PYTHONPATH
+nohup python3 main.py >/home/runner/logs.txt 2>&1 &  
 `;
 
 // Create a Virtual Machine Instance
