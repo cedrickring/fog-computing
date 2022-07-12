@@ -13,7 +13,17 @@ from weather_sensors import WeatherSensors
 
 logger = get_logger(__name__)
 
-message_socket = MessageSocket(host="localhost", port=40000, socket_type=zmq.REQ, identity=sys.argv[1])
+if len(sys.argv) < 2:
+    print("Usage: python main.py <identity> [host]")
+    sys.exit(1)
+elif len(sys.argv) < 3:
+    identity = sys.argv[1]
+    hostname = "localhost"
+else:
+    identity = sys.argv[1]
+    hostname = sys.argv[2]
+
+message_socket = MessageSocket(host=hostname, port=40000, socket_type=zmq.REQ, identity=identity)
 weather_sensors = WeatherSensors()
 prediction_history = PredictionHistory()
 prediction_controller = PredictionController(
@@ -54,8 +64,14 @@ async def main():
 
 
 if __name__ == '__main__':
+    exit_code = 0
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info('Shutting down...')
+    except Exception as ex:
+        logger.exception('Application threw unrecoverable error:')
+        exit_code = 1
+    finally:
         message_socket.shutdown()
+    sys.exit(exit_code)
