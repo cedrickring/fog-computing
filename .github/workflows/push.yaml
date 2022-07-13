@@ -50,7 +50,7 @@ jobs:
 
           export_default_credentials: true
       - run: "gcloud compute scp --recurse cloud-node models util requirements.txt ${{needs.up.outputs.instanceName }}:~"
-      - run: 'gcloud compute ssh ${{needs.up.outputs.instanceName }} --command="sudo apt update && sudo apt install screen python3-pip -y && sudo reboot"'
+      - run: 'gcloud compute ssh ${{needs.up.outputs.instanceName }} --command="sudo apt update && sudo apt install screen python3-pip -y && sudo reboot" || exit 0'
         name: Install required packages and reboot
 
 
